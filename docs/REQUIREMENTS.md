@@ -1,53 +1,44 @@
 # PayScope — MVP Requirements
 
-**Product:** PayScope · **Customer:** ACME (~10,000 employees, multinational) · **Primary user:** HR Manager
+**Product:** PayScope · **Customer:** ACME (~10,000 employees, multinational) · **Primary user:** HR Manager  
+**Assessment:** Incubyte Software Craftsperson / Node / React / TypeScript II
 
 ## Problem and goal
 
-ACME HR manages salaries in Excel. Current pay is hard to trust, revision history is fragmented, and questions like “how does pay compare by department or country?” require error-prone manual work.
-
-PayScope’s MVP is a single system of record for **who people are, what they are paid, when pay changed, and how compensation looks by department and country** — with CSV import/export, an audit trail, and HR-only access.
+ACME HR tracks salaries in spreadsheets. Current pay is hard to trust, history is fragmented, and org-wide comparisons are manual. PayScope is a **web-based** system of record for **who people are, what they are paid, when pay changed, and how compensation looks across the organization**.
 
 ## User persona
 
-**HR Manager** — owns salary accuracy and compensation reporting. Needs to find employees, set or revise pay, inspect history, run department/country analytics, bulk-load or export data, and see who changed what. Does not run payroll, tax, or employee self-service.
+**HR Manager** — finds employees, sets or revises pay, inspects history, runs compensation analytics, imports/exports CSV, and sees who changed what. Does not run payroll, tax, or employee self-service.
 
-## MVP scope
+## Explicitly stated assessment requirements
 
-- **Directory:** search, filter, paginate employees
-- **Current salary:** view and update amount + currency
-- **History:** effective-dated salary revisions (not overwritten)
-- **Analytics:** compensation stats by department and by country
-- **CSV:** import and export employee/salary data
-- **Audit:** who changed salary data, what changed, when
-- **Access:** authenticated HR users only
+From the Incubyte brief (not our product design): a **web-based** salary-management app for **~10,000 multinational employees**; **HR Manager** as primary user; help HR **answer organizational compensation questions**; **working frontend and backend**; a **10,000-employee seed script**; **deployment**; a **demo video**; **unit tests**; **incremental commits**; and this **one-page requirements document**.
+
+## Proposed MVP (our design — not confirmed by Incubyte)
+
+- **Directory:** search, filter, pagination. Default list is **active** employees; inactive remain findable via filter. **Deactivate**; do not hard-delete.
+- **Salary:** annual **base salary only**. Store as **integer minor units** + **ISO 4217** code, using that currency’s decimal scale (INR/USD/GBP/AED/EUR = 2). **Current salary** = latest revision with effective **UTC calendar date ≤ today (UTC)**. **One revision per employee per effective date.** A **same-date correction** updates that revision; old and new values go to an **immutable audit log**. **Future-dated revisions** stay in history and do **not** affect current pay or analytics. No current revision → salary unset; employee stays in the directory.
+- **Analytics:** current snapshot, grouped by **department, country, and currency**. **Employee headcount** = all active employees in the group. **Compensated headcount** = active employees with a current salary. Min, max, average, median, and **total** use **compensated** employees only. Never mix currencies. Employees without a current salary count in department/country employee headcount, not in any currency slice or salary stat.
+- **CSV:** export current directory + current salary. Import **validates the whole file** and commits **all rows in one transaction** only if every row is valid; otherwise reject with **row-level errors**.
+- **Audit / auth:** salary create/update/import records actor, time, employee, previous and new values. HR login required; no SSO or extra roles.
+- **Performance:** pagination, filtering, and aggregation run **in the database** at ~10,000 employees.
+- **Seed:** 10,000 employees across **India, US, UK, UAE, Germany** (INR, USD, GBP, AED, EUR) and departments **Engineering, Product, Design, Sales, Marketing, Finance, HR, Operations, Support**. One seeded HR login.
 
 ## Acceptance criteria
 
-- **Directory.** HR can search by name or employee id, filter by department and country, and page results without loading all 10,000 employees.
-- **Current salary.** Each employee has one current salary (amount + ISO currency). Updating it writes a revision with an effective date and becomes current when that date is today or earlier.
-- **History.** HR can view an ordered revision list (amount, currency, effective date, reason). Future-dated revisions do not change current pay until that date.
-- **Analytics.** HR can see headcount plus min/max/average/median pay by department and by country. Mixed-currency amounts are never summed, averaged, or ranked as one unit; groups are split or labeled by currency.
-- **CSV.** Export includes current directory and current salary. Import creates or updates employees/salaries. Invalid rows fail with a row-level error; valid rows still apply. Unauthenticated import/export is denied.
-- **Audit.** Salary create/update/import records actor, timestamp, employee, previous value, and new value. HR can view the trail.
-- **Auth.** Unauthenticated access is denied. Only the HR role can read or change compensation data.
-
-## Multi-country compensation
-
-Employees are paid in **local currency** (ISO 4217). Store and display amounts in that currency. MVP does **not** convert FX. Do not aggregate across currencies. Analytics must group by currency within department or country, or show a non-numeric notice when a slice mixes currencies.
+- **Directory.** Search by name or employee id; filter by department, country, and active/inactive; **paginate in the database**. Default view is active. Deactivated employees stay findable.
+- **Current salary.** Latest revision with effective UTC date ≤ today UTC (major units on screen; minor units + currency in storage). Unset if none. Same-date correction updates the existing revision and writes old/new values to the audit log. A new effective date creates a new revision.
+- **History.** Ordered list (amount, currency, effective date, reason), including future dates. Future revisions are not current and are omitted from current-snapshot analytics.
+- **Analytics.** Current snapshot **aggregated in the database**. Per department/country (and currency for pay stats): employee headcount (active), compensated headcount (active with current salary), plus min, max, average, median, total on compensated employees only. No mixed-currency totals, averages, or ranks.
+- **CSV.** Authenticated export. Import is all-or-nothing: validate every row, then commit all or none, with row-level errors on reject.
+- **Audit / auth.** Salary mutations are logged immutably. Unauthenticated access is denied; only HR can read or change compensation data.
+- **Scale.** Directory pagination/filtering and analytics aggregation stay database-backed and correct at 10,000 employees.
 
 ## Non-goals
 
-Payroll execution, tax calculations, payslips, attendance, recruitment, employee self-service, bonuses/equity/benefits beyond base salary, FX conversion / corporate reporting currency, and AI-generated SQL.
+Proposed exclusions (not Incubyte-stated): payroll, tax, payslips, attendance, recruitment, employee self-service, AI-generated SQL, bonuses/equity/benefits, FX conversion, as-of-date analytics, partial CSV commits, hard delete, extra HR roles.
 
-## Confirmed vs assumed
+## Assumptions
 
-**Confirmed:** HR-only Excel replacement; directory, current salary, effective-dated history, department/country analytics, CSV, audit, basic HR auth; local currencies with no invalid cross-currency aggregation; non-goals above are excluded.
-
-**Assumptions (need review):** annual **base salary only**; one currency per employee; departments and countries are predefined lists; one seeded HR login (no SSO, no extra HR roles); page size ~25; CSV is the Excel migration path; audit covers salary mutations, not page views; “current” = latest revision with effective date ≤ today.
-
-**Open questions:** Delete vs deactivate employees? Are future-dated revisions required in MVP, or only past/current? Which countries/currencies in seed data? Is import create-and-update or create-only? Analytics as-of a past date, or current snapshot only?
-
-## Why this scope
-
-This set replaces Excel for the HR Manager’s actual questions: find people, trust current pay, see how pay changed, and compare groups without mixing currencies. CSV unblocks a 10k-employee migration. Audit and HR-only auth are the minimum controls for compensation data. Payroll, tax, payslips, attendance, recruiting, self-service, and AI SQL are adjacent systems; they add complexity without solving ACME’s stated problem and would oversize an assessment MVP.
+Proposed, not Incubyte-confirmed: rules in Proposed MVP; **UTC** for effective dates; same-date **in-place correction** with immutable audit; default directory **active only**; seed departments listed above; CSV create-and-update; audit of salary mutations only; page size ~25.
