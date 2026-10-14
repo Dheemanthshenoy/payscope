@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Next.js
+next-env.d.ts
+.vercel
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+*.tsbuildinfo
+
+# Test / coverage
+coverage/
+
+# Prisma generated client (if emitted into the repo)
+apps/api/generated/
+
+# Logs and OS
+npm-debug.log*
+.DS_Store
+*.log
