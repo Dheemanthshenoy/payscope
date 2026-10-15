@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler } from "express";
+import { ZodError } from "zod";
 import { ErrorCode } from "@payscope/shared";
 import { AppError } from "../errors/app-error.js";
 import { sendError } from "../utils/api-response.js";
@@ -11,6 +12,11 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
 
   if (err instanceof AppError) {
     sendError(res, err.status, err.code, err.message);
+    return;
+  }
+
+  if (err instanceof ZodError) {
+    sendError(res, 400, ErrorCode.VALIDATION, "Invalid request");
     return;
   }
 
