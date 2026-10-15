@@ -1,9 +1,28 @@
+import cookieParser from "cookie-parser";
 import express from "express";
-import { HealthResponseSchema } from "@payscope/shared";
+import helmet from "helmet";
+import { createAuthRouter } from "./auth/auth.routes.js";
+import type { AppConfig } from "./config.js";
+import { health } from "./health/health.controller.js";
+import { createCsrfMiddleware } from "./middleware/csrf.js";
+import { errorHandler } from "./middleware/error-handler.js";
 
-export const app = express();
+export function createApp(config: AppConfig): express.Express {
+  const app = express();
 
-app.get("/api/health", (_req, res) => {
-  const body = HealthResponseSchema.parse({ status: "ok" });
-  res.json(body);
-});
+  if (config.trustProxyHops !== false) {
+    app.set("trust proxy", config.trustProxyHops);
+  }
+
+  app.disable("x-powered-by");
+  app.use(helmet());
+  app.use(express.json({ limit: "32kb" }));
+  app.use(cookieParser());
+  app.use(createCsrfMiddleware(config));
+
+  app.get("/api/health", health);
+  app.use("/api/auth", createAuthRouter(config));
+
+  app.use(errorHandler);
+  return app;
+}

@@ -11,7 +11,7 @@
     "dev:web": "npm run build -w @payscope/shared && npm run dev -w @payscope/web",
     "build": "npm run build -w @payscope/shared && npm run build -w @payscope/api && npm run build -w @payscope/web",
     "typecheck": "npm run build -w @payscope/shared && npm run typecheck -w @payscope/api && npm run typecheck -w @payscope/web",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run build -w @payscope/shared && npm run test --workspaces --if-present"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

@@ -1,7 +1,14 @@
-import { app } from "./app.js";
+import { resolve } from "node:path";
+import { config as loadDotenv } from "dotenv";
+import { createApp } from "./app.js";
+import { loadConfig } from "./config.js";
 
-const port = Number(process.env.API_PORT ?? 3001);
+loadDotenv({ path: resolve(process.cwd(), ".env") });
+loadDotenv({ path: resolve(process.cwd(), "../../.env") });
 
-app.listen(port, () => {
-  console.log(`PayScope API listening on ${port}`);
+const config = loadConfig();
+const app = createApp(config);
+
+app.listen(config.port, () => {
+  console.log(`PayScope API listening on ${config.port}`);
 });
