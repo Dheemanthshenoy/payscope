@@ -1,21 +1,17 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Bricolage_Grotesque, } from "next/font/google";
 import type { ReactNode } from "react";
+import { AuthProvider } from "@/providers/auth-provider";
 import "./globals.css";
 
-const geistSans = Geist({
+const bricolageGrotesque = Bricolage_Grotesque({
   variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
   title: "PayScope",
-  description: "Employee compensation management",
+  description: "HR compensation management for ACME",
 };
 
 export default function RootLayout({
@@ -24,11 +20,10 @@ export default function RootLayout({
   children: ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en" className={`${bricolageGrotesque.className} h-full antialiased`}>
+      <body className="min-h-full bg-background font-sans text-foreground">
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }
