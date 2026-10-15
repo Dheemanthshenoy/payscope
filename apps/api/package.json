@@ -12,7 +12,8 @@
     "db:validate": "prisma validate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
-    "db:migrate:dev": "prisma migrate dev"
+    "db:migrate:dev": "prisma migrate dev",
+    "db:seed": "tsx src/seed/cli.ts"
   },
   "dependencies": {
     "@payscope/shared": "*",

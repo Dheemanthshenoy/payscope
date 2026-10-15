@@ -11,6 +11,7 @@ export type ApiErrorBody = {
   error: {
     code: string;
     message: string;
+    details?: unknown;
   };
 };
 
@@ -39,10 +40,11 @@ export function sendError(
   status: number,
   code: string,
   message: string,
+  details?: unknown,
 ): void {
   const body: ApiErrorBody = {
     success: false,
-    error: { code, message },
+    error: details === undefined ? { code, message } : { code, message, details },
   };
   res.status(status).json(body);
 }

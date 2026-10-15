@@ -7,6 +7,7 @@ export const ErrorCode = {
   CSRF: "CSRF",
   RATE_LIMITED: "RATE_LIMITED",
   CONFLICT: "CONFLICT",
+  CSV_INVALID: "CSV_INVALID",
   NOT_FOUND: "NOT_FOUND",
   INTERNAL: "INTERNAL",
 } as const;
@@ -24,6 +25,7 @@ export const ApiErrorSchema = z.object({
   error: z.object({
     code: z.string(),
     message: z.string(),
+    details: z.unknown().optional(),
   }),
 });
 

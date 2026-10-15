@@ -3,7 +3,11 @@ import {
   AmountMinorSchema,
   EffectiveOnSchema,
   formatAmountMinor,
+  formatMinorAsMajor,
+  looksLikeSpreadsheetFormula,
   parseAmountMinor,
+  parseMajorToMinor,
+  roundHalfAwayFromZeroInteger,
   utcToday,
 } from "./money.js";
 
@@ -31,5 +35,30 @@ describe("utcToday", () => {
     expect(today.getUTCHours()).toBe(0);
     expect(today.getUTCMinutes()).toBe(0);
     expect(today.getUTCSeconds()).toBe(0);
+  });
+});
+
+describe("major-unit money", () => {
+  it("parses exact decimals without floating-point", () => {
+    expect(parseMajorToMinor("1000")).toBe(100000n);
+    expect(parseMajorToMinor("1000.5")).toBe(100050n);
+    expect(parseMajorToMinor("1000.50")).toBe(100050n);
+    expect(formatMinorAsMajor(100050n)).toBe("1000.50");
+    expect(() => parseMajorToMinor("1000.567")).toThrow();
+    expect(() => parseMajorToMinor("1e2")).toThrow();
+    expect(() => parseMajorToMinor("-1")).toThrow();
+  });
+
+  it("rounds half away from zero using decimal strings", () => {
+    expect(roundHalfAwayFromZeroInteger("150.5")).toBe("151");
+    expect(roundHalfAwayFromZeroInteger("150.4999")).toBe("150");
+    expect(roundHalfAwayFromZeroInteger("200")).toBe("200");
+    expect(roundHalfAwayFromZeroInteger("0.5")).toBe("1");
+  });
+
+  it("detects spreadsheet formula prefixes", () => {
+    expect(looksLikeSpreadsheetFormula("=cmd")).toBe(true);
+    expect(looksLikeSpreadsheetFormula("+123")).toBe(true);
+    expect(looksLikeSpreadsheetFormula("Alice")).toBe(false);
   });
 });

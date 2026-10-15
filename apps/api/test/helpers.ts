@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Express } from "express";
 import request from "supertest";
 import type { AppConfig } from "../src/config.js";
@@ -54,3 +55,18 @@ export function login(
 }
 
 export { hashSessionToken };
+
+const RESERVED_COUNTRY_CODES = new Set(["IN", "US", "GB", "AE", "DE"]);
+
+export async function createTestCountry(name: string) {
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const code = randomUUID().replace(/-/g, "").slice(0, 2).toUpperCase();
+    if (RESERVED_COUNTRY_CODES.has(code)) continue;
+    try {
+      return await prisma.country.create({ data: { code, name } });
+    } catch {
+      continue;
+    }
+  }
+  throw new Error("Could not allocate a unique test country code");
+}

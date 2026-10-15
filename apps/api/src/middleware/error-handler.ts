@@ -11,7 +11,7 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
   }
 
   if (err instanceof AppError) {
-    sendError(res, err.status, err.code, err.message);
+    sendError(res, err.status, err.code, err.message, err.details);
     return;
   }
 

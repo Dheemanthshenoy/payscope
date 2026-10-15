@@ -20,6 +20,7 @@ process.env.SESSION_SECRET = process.env.SESSION_SECRET?.trim() || "test-session
 process.env.AUTH_LOGIN_RATE_LIMIT_MAX = process.env.AUTH_LOGIN_RATE_LIMIT_MAX?.trim() || "100";
 process.env.AUTH_LOGIN_RATE_LIMIT_WINDOW_MS =
   process.env.AUTH_LOGIN_RATE_LIMIT_WINDOW_MS?.trim() || "60000";
+process.env.CSV_IMPORT_RATE_LIMIT_MAX = process.env.CSV_IMPORT_RATE_LIMIT_MAX?.trim() || "100";
 
 const sourceUrl = process.env.TEST_DATABASE_URL?.trim() || process.env.DATABASE_URL;
 if (!sourceUrl) {

@@ -8,6 +8,7 @@ import {
   cookieHeader,
   cookieValue,
   createHrUser,
+  createTestCountry,
   deleteHrUserByEmail,
   login,
   testApp,
@@ -59,13 +60,8 @@ afterEach(async () => {
 async function seedDirectory() {
   const departmentA = await prisma.department.create({ data: { name: `${prefix}-Eng` } });
   const departmentB = await prisma.department.create({ data: { name: `${prefix}-Sales` } });
-  const tag = prefix.replace(/[^a-z0-9]/gi, "").slice(-1).toUpperCase();
-  const countryIn = await prisma.country.create({
-    data: { code: `A${tag}`, name: `${prefix}-India` },
-  });
-  const countryUs = await prisma.country.create({
-    data: { code: `B${tag}`, name: `${prefix}-US` },
-  });
+  const countryIn = await createTestCountry(`${prefix}-India`);
+  const countryUs = await createTestCountry(`${prefix}-US`);
   return { departmentA, departmentB, countryIn, countryUs };
 }
 

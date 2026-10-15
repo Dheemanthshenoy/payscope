@@ -9,6 +9,10 @@ export type AppConfig = {
   trustProxyHops: number | false;
   loginRateLimitMax: number;
   loginRateLimitWindowMs: number;
+  importRateLimitMax: number;
+  importRateLimitWindowMs: number;
+  csvMaxBytes: number;
+  csvMaxRows: number;
   port: number;
 };
 
@@ -72,11 +76,27 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 
   const loginRateLimitMax = Number(env.AUTH_LOGIN_RATE_LIMIT_MAX ?? 10);
   const loginRateLimitWindowMs = Number(env.AUTH_LOGIN_RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000);
+  const importRateLimitMax = Number(env.CSV_IMPORT_RATE_LIMIT_MAX ?? 20);
+  const importRateLimitWindowMs = Number(env.CSV_IMPORT_RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000);
+  const csvMaxBytes = Number(env.CSV_MAX_BYTES ?? 2 * 1024 * 1024);
+  const csvMaxRows = Number(env.CSV_MAX_ROWS ?? 10_000);
   if (!Number.isInteger(loginRateLimitMax) || loginRateLimitMax < 1) {
     throw new Error("AUTH_LOGIN_RATE_LIMIT_MAX must be a positive integer");
   }
   if (!Number.isFinite(loginRateLimitWindowMs) || loginRateLimitWindowMs < 1) {
     throw new Error("AUTH_LOGIN_RATE_LIMIT_WINDOW_MS must be a positive number");
+  }
+  if (!Number.isInteger(importRateLimitMax) || importRateLimitMax < 1) {
+    throw new Error("CSV_IMPORT_RATE_LIMIT_MAX must be a positive integer");
+  }
+  if (!Number.isFinite(importRateLimitWindowMs) || importRateLimitWindowMs < 1) {
+    throw new Error("CSV_IMPORT_RATE_LIMIT_WINDOW_MS must be a positive number");
+  }
+  if (!Number.isInteger(csvMaxBytes) || csvMaxBytes < 1024) {
+    throw new Error("CSV_MAX_BYTES must be an integer of at least 1024");
+  }
+  if (!Number.isInteger(csvMaxRows) || csvMaxRows < 1) {
+    throw new Error("CSV_MAX_ROWS must be a positive integer");
   }
 
   const port = Number(env.API_PORT ?? 3001);
@@ -95,6 +115,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     trustProxyHops: parseHops(env.TRUST_PROXY_HOPS),
     loginRateLimitMax,
     loginRateLimitWindowMs,
+    importRateLimitMax,
+    importRateLimitWindowMs,
+    csvMaxBytes,
+    csvMaxRows,
     port,
   };
 }

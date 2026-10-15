@@ -49,4 +49,17 @@ describe("api-response", () => {
       error: { code: "UNAUTHENTICATED", message: "Authentication required" },
     });
   });
+
+  it("includes optional error details", () => {
+    const res = mockRes();
+    sendError(res, 400, "CSV_INVALID", "CSV file is invalid", { rows: [{ rowNumber: 2 }] });
+    expect(res.body).toEqual({
+      success: false,
+      error: {
+        code: "CSV_INVALID",
+        message: "CSV file is invalid",
+        details: { rows: [{ rowNumber: 2 }] },
+      },
+    });
+  });
 });

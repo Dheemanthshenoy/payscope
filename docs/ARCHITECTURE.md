@@ -232,9 +232,10 @@ JSON REST, same-origin `/api`. All routes except login require a valid session a
 | GET | `/api/countries` | filter dropdown |
 | GET | `/api/employees` | directory: `q`, `departmentId`, `countryId`, `status=active\|inactive\|all` (default **active**), pagination. Include derived current salary or null. DB `LIMIT/OFFSET` or keyset; offset is fine at 10k. |
 | GET | `/api/employees/:id` | detail + derived current salary |
-| POST | `/api/employees/:id/deactivate` | `is_active=false` (no hard delete) |
+| PATCH | `/api/employees/:id/deactivate` | `is_active=false` (no hard delete). Architecture originally said POST; implemented as PATCH. |
 | GET | `/api/employees/:id/salary-revisions` | history, all dates, newest first |
-| POST | `/api/employees/:id/salary-revisions` | **Not a blind upsert.** New `effectiveOn` → insert (`version` omitted). Existing `effectiveOn` → correction: require `version` + `reason`; success increments version and writes audit; stale version → **409** `{ code: "CONFLICT" }`, no audit. |
+| POST | `/api/employees/:id/salary-revisions` | create a new effective date (`version` omitted). Duplicate date → 409. |
+| PATCH | `/api/employees/:id/salary-revisions/:revisionId` | same-date correction: require `expectedVersion` + `reason`; stale version → 409, no audit. |
 | GET | `/api/analytics/compensation` | current snapshot: by department and by country, nested currency stats + both headcounts (money fields as strings) |
 | GET | `/api/employees/export` | CSV of current directory + current salary (`text/csv`) |
 | POST | `/api/employees/import` | multipart CSV; validate outside txn; version-snapshot updates; all-or-nothing batched commit; stale version or unique race → 409, full rollback |
@@ -243,7 +244,13 @@ JSON REST, same-origin `/api`. All routes except login require a valid session a
 
 **Employee create/edit UI — decision: omit from MVP.** The product goal is a system of record, but identity writes are already covered by the **10,000-employee seed** and **CSV create-and-update**. The HR Manager’s daily path is search, salary revision, analytics, and audit. A create/edit form would add pages, `POST/PATCH /employees`, extra validation/E2E, and an audit gap for non-salary fields — not justified in a time-boxed assessment. **In UI:** deactivate only. **Not in MVP:** reactivate, as-of analytics.
 
-**CSV (assumed columns):** `employee_number, full_name, department, country, effective_on, amount, currency_code, reason`. `amount` is **major units** matching currency scale. Keyed by `employee_number`. Intra-file duplicate `employee_number`+`effective_on` → whole-file reject. Same pair already in the DB → update that revision (import correct) + audit. `reason` required when the row corrects an existing date. Rows with empty salary fields may upsert the employee and leave salary unset.
+**CSV canonical header** (see `docs/samples/employees.sample.csv`):
+
+```
+employee_number,full_name,department,country,is_active,effective_on,amount,currency_code,reason
+```
+
+`amount` is **major units** with at most 2 decimal places, parsed as integer minor units (no `Number()` / float). `country` accepts the seeded name (`India`, `US`, `UK`, `UAE`, `Germany`) or ISO code (`IN`, `US`, `GB`, `AE`, `DE`). `is_active` accepts `true`/`false` (also `1`/`0`, `yes`/`no`, `active`/`inactive`). Intra-file duplicate `employee_number` **or** `employee_number`+`effective_on` → whole-file reject. Same pair already in the DB → update that revision (import correct) + audit. `reason` required when the row corrects an existing date. Rows with empty salary fields may upsert the employee and leave salary unset. Import will **deactivate** (`is_active=false`) but will **not reactivate**. Identity fields (name, department, country) are updated. Fields that look like spreadsheet formulas (`=`, `+`, `-`, `@`) are rejected on import and prefixed with `'` on export.
 
 ## 6. Security
 
@@ -304,7 +311,7 @@ Incubyte asks for **unit tests**; integration and a thin E2E layer back the sala
 **Resolved assumptions (still not Incubyte-stated):**
 
 - **Correction `reason`:** required on same-date corrections (API and CSV). Optional on first insert for that date.
-- **CSV duplicates:** intra-file `employee_number` + `effective_on` duplicates reject the **entire** file with row-level errors. The same pair already in the DB is an update, not a duplicate error.
+- **CSV duplicates:** intra-file duplicate `employee_number` or `employee_number` + `effective_on` reject the **entire** file with row-level errors. The same pair already in the DB is an update, not a duplicate error.
 - **Session lifetime:** 8-hour idle expiry; regenerate id on login.
 - **Median:** exact `avg(amount_minor::numeric)` of the middle one or two rows per group (`row_number` + `count`); round to integer minor units only when presenting the API response.
 - **Employee create/edit form:** omitted from MVP (seed + CSV only); see section 5.
@@ -313,8 +320,8 @@ Incubyte asks for **unit tests**; integration and a thin E2E layer back the sala
 
 **Still open:**
 
-1. **CSV extras** — whether import may deactivate or change department/country; whether a row can omit salary (assumed yes).
-2. **Reactivate** — deactivate is specified; restore-to-active is not.
+1. **CSV extras** — resolved: import may change department/country, may deactivate, and may omit salary. It will not reactivate.
+2. **Reactivate** — deactivate is specified; restore-to-active is not (API or CSV).
 3. **Email / title / hire date** — omitted from the model on purpose.
 4. **Currency vs country** — a US employee with INR pay is allowed; analytics will show that currency slice.
 5. **Audit of non-salary CSV fields** — salary mutations only; name/department changes via import may be unaudited.
@@ -323,3 +330,17 @@ Incubyte asks for **unit tests**; integration and a thin E2E layer back the sala
 8. **Employee number format** — opaque unique string.
 
 If CSV identity rules (1) or reactivate (2) must change before implementation, update `REQUIREMENTS.md` first.
+
+## 10. Implementation notes (Milestones 6–7)
+
+**Analytics grouping.** `GET /api/analytics/compensation` returns `{ byDepartment, byCountry }`. Each group includes `activeEmployeeCount` (active employees, including unpaid) and `compensatedEmployeeCount` (active with a current UTC-effective salary, after optional `currencyCode` filter). Pay stats are nested `byCurrency` and never mixed. Empty compensated groups serialize `minimum`/`maximum`/`average`/`median` as `null` and `total` as `"0"`. Optional filters: `departmentId`, `countryId`, `currencyCode`.
+
+**Money precision.** SQL uses `amount_minor::numeric` for `AVG`, `SUM`, and the window median (`row_number` + `count` + `avg` of the middle one or two rows). PostgreSQL `percentile_cont` is not used. Average and median are rounded to integer minor units **only at the API boundary**, half away from zero, then serialized as decimal strings. Min/max/total are already integer minor units.
+
+**CSV transport.** Import is `POST /api/employees/import` (`multipart/form-data`, field name `file`, default 2 MiB / 10,000 rows, coarse rate limit). Validate-then-one-transaction. Success envelope data is `{ imported: { employees, revisions } }`. Export is `GET /api/employees/export` (`text/csv`) using the same directory filters, batched 200 rows, current salary only. Export does not use the JSON `sendSuccess` envelope.
+
+**Seed.** Explicit only: `npm run db:seed -w @payscope/api -- --confirm` with `PAYSCOPE_SEED_CONFIRM=PAYSCOPE_SEED`. Not registered as `prisma.seed` and not run on API startup or migrate. Test databases require `--allow-test`. Generates 10,000 `SEED-00001`… employees across the documented countries/departments; reruns skip manually renamed seed employees and never update existing revision rows.
+
+**Global audit.** `GET /api/audit-logs` is not implemented; per-employee `GET /api/employees/:id/audit-logs` is.
+
+**Known limitations.** Name search is `ILIKE '%q%'` (seq scan at 10k). CSV import updates employees row-by-row inside one transaction (fine at 10k, not a COPY path). Seed country/department upserts use canonical names. A US employee may have INR pay. Non-salary CSV identity edits are not audit-logged.

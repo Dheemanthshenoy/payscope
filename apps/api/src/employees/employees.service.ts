@@ -1,11 +1,11 @@
 import type { Prisma } from "@prisma/client";
-import { ErrorCode, type EmployeeListQuery } from "@payscope/shared";
+import { ErrorCode, type EmployeeFilterQuery, type EmployeeListQuery } from "@payscope/shared";
 import { prisma } from "../db/prisma.js";
 import { AppError } from "../errors/app-error.js";
 import { findCurrentSalaries } from "../salaries/current-salary.js";
 import { serializeEmployee } from "./employees.serialize.js";
 
-function listWhere(query: EmployeeListQuery): Prisma.EmployeeWhereInput {
+export function employeeListWhere(query: EmployeeFilterQuery): Prisma.EmployeeWhereInput {
   const where: Prisma.EmployeeWhereInput = {};
   if (query.status === "active") where.isActive = true;
   if (query.status === "inactive") where.isActive = false;
@@ -21,7 +21,7 @@ function listWhere(query: EmployeeListQuery): Prisma.EmployeeWhereInput {
 }
 
 export async function listEmployees(query: EmployeeListQuery) {
-  const where = listWhere(query);
+  const where = employeeListWhere(query);
   const skip = (query.page - 1) * query.pageSize;
   const [totalCount, employees] = await Promise.all([
     prisma.employee.count({ where }),

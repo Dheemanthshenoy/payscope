@@ -8,7 +8,7 @@ import {
 
 export const EmployeeStatusSchema = z.enum(["active", "inactive", "all"]).default("active");
 
-export const EmployeeListQuerySchema = PaginationQuerySchema.extend({
+const employeeFilters = {
   q: z
     .string()
     .trim()
@@ -18,8 +18,12 @@ export const EmployeeListQuerySchema = PaginationQuerySchema.extend({
   departmentId: z.uuid().optional(),
   countryId: z.uuid().optional(),
   status: EmployeeStatusSchema,
-});
+};
 
+export const EmployeeFilterQuerySchema = z.object(employeeFilters);
+export type EmployeeFilterQuery = z.infer<typeof EmployeeFilterQuerySchema>;
+
+export const EmployeeListQuerySchema = PaginationQuerySchema.extend(employeeFilters);
 export type EmployeeListQuery = z.infer<typeof EmployeeListQuerySchema>;
 
 export const CurrentSalarySchema = z.object({
