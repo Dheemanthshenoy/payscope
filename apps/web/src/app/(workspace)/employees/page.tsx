@@ -1,17 +1,9 @@
 "use client";
 
-import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { EmployeeSummary } from "@payscope/shared";
-import {
-  ApiClientError,
-  fetchCountries,
-  fetchDepartments,
-  fetchEmployees,
-  type CountryLookup,
-  type DepartmentLookup,
-} from "@/lib/api";
-import { formatMoney } from "@/lib/format";
+import { useQuery } from "@tanstack/react-query";
+import { CreateEmployeeDialog } from "@/components/create-employee-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +14,9 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ApiClientError, fetchCountries, fetchDepartments, fetchEmployees } from "@/lib/api";
+import { formatMoney } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 
 type StatusFilter = "active" | "inactive" | "all";
 
@@ -32,55 +27,47 @@ export default function EmployeesPage() {
   const [countryId, setCountryId] = useState("");
   const [status, setStatus] = useState<StatusFilter>("active");
   const [page, setPage] = useState(1);
-  const [departments, setDepartments] = useState<DepartmentLookup[]>([]);
-  const [countries, setCountries] = useState<CountryLookup[]>([]);
-  const [items, setItems] = useState<EmployeeSummary[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [pageSize, setPageSize] = useState(25);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
     const handle = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
     return () => window.clearTimeout(handle);
   }, [query]);
 
-  useEffect(() => {
-    void Promise.all([fetchDepartments(), fetchCountries()])
-      .then(([nextDepartments, nextCountries]) => {
-        setDepartments(nextDepartments);
-        setCountries(nextCountries);
-      })
-      .catch(() => undefined);
-  }, []);
+  const filters = {
+    q: debouncedQuery || undefined,
+    departmentId: departmentId || undefined,
+    countryId: countryId || undefined,
+    status,
+    page,
+    pageSize: 25,
+  };
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await fetchEmployees({
-        q: debouncedQuery || undefined,
-        departmentId: departmentId || undefined,
-        countryId: countryId || undefined,
-        status,
-        page,
-        pageSize: 25,
-      });
-      setItems(result.items);
-      setTotalCount(result.totalCount);
-      setPageSize(result.pageSize);
-    } catch (err) {
-      setItems([]);
-      setError(err instanceof ApiClientError ? err.message : "Unable to load employees.");
-    } finally {
-      setLoading(false);
-    }
-  }, [debouncedQuery, departmentId, countryId, status, page]);
+  const departmentsQuery = useQuery({
+    queryKey: queryKeys.departments,
+    queryFn: fetchDepartments,
+  });
+  const countriesQuery = useQuery({
+    queryKey: queryKeys.countries,
+    queryFn: fetchCountries,
+  });
+  const employeesQuery = useQuery({
+    queryKey: queryKeys.employees(filters),
+    queryFn: () => fetchEmployees(filters),
+  });
 
-  useEffect(() => {
-    startTransition(() => load());
-  }, [load]);
-
+  const departments = departmentsQuery.data ?? [];
+  const countries = countriesQuery.data ?? [];
+  const items = employeesQuery.data?.items ?? [];
+  const totalCount = employeesQuery.data?.totalCount ?? 0;
+  const pageSize = employeesQuery.data?.pageSize ?? 25;
+  const loading = employeesQuery.isLoading;
+  const error =
+    employeesQuery.error instanceof ApiClientError
+      ? employeesQuery.error.message
+      : employeesQuery.error
+        ? "Unable to load employees."
+        : null;
   const pageCount = useMemo(
     () => Math.max(1, Math.ceil(totalCount / pageSize)),
     [totalCount, pageSize],
@@ -88,11 +75,16 @@ export default function EmployeesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Employees</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Search and filter the directory. Pagination runs on the server.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Employees</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Search and filter the directory. Pagination runs on the server.
+          </p>
+        </div>
+        <Button type="button" onClick={() => setCreateOpen(true)}>
+          Add Employee
+        </Button>
       </div>
 
       <Card>
@@ -163,11 +155,9 @@ export default function EmployeesPage() {
         </CardContent>
       </Card>
 
-      {error ? <ErrorState message={error} onRetry={() => void load()} /> : null}
+      {error ? <ErrorState message={error} onRetry={() => void employeesQuery.refetch()} /> : null}
 
-      {!error && loading ? (
-        <Skeleton className="h-80" />
-      ) : null}
+      {!error && loading ? <Skeleton className="h-80" /> : null}
 
       {!error && !loading && items.length === 0 ? (
         <EmptyState
@@ -242,6 +232,13 @@ export default function EmployeesPage() {
           </div>
         </Card>
       ) : null}
+
+      <CreateEmployeeDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        departments={departments}
+        countries={countries}
+      />
     </div>
   );
 }

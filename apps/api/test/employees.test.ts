@@ -515,3 +515,241 @@ describe("employee directory and salaries", () => {
     expect(create.body.error.code).toBe(ErrorCode.CSRF);
   });
 });
+
+describe("employee create and edit", () => {
+  it("creates an employee without a salary and writes EMPLOYEE_CREATE", async () => {
+    const { departmentA, countryIn } = await seedDirectory();
+    const { app, cookie } = await session();
+    const res = await request(app)
+      .post("/api/employees")
+      .set("Origin", APP_ORIGIN)
+      .set("Cookie", cookie)
+      .send({
+        employeeNumber: `${prefix}-NEW`,
+        fullName: "New Nina",
+        departmentId: departmentA.id,
+        countryId: countryIn.id,
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.data.employeeNumber).toBe(`${prefix}-NEW`);
+    expect(res.body.data.fullName).toBe("New Nina");
+    expect(res.body.data.isActive).toBe(true);
+    expect(res.body.data.currentSalary).toBeNull();
+
+    const audits = await request(app)
+      .get(`/api/employees/${res.body.data.id}/audit-logs`)
+      .set("Cookie", cookie);
+    expect(audits.body.data.totalCount).toBe(1);
+    expect(audits.body.data.items[0].action).toBe("EMPLOYEE_CREATE");
+    expect(audits.body.data.items[0].previousValue).toBeNull();
+    expect(audits.body.data.items[0].newValue).toMatchObject({
+      employeeNumber: `${prefix}-NEW`,
+      fullName: "New Nina",
+      departmentId: departmentA.id,
+      countryId: countryIn.id,
+      isActive: true,
+    });
+  });
+
+  it("returns 409 when the employee number already exists", async () => {
+    const { departmentA, countryIn } = await seedDirectory();
+    await createEmployee({
+      number: "DUP",
+      name: "Existing Erin",
+      departmentId: departmentA.id,
+      countryId: countryIn.id,
+    });
+    const { app, cookie } = await session();
+    const res = await request(app)
+      .post("/api/employees")
+      .set("Origin", APP_ORIGIN)
+      .set("Cookie", cookie)
+      .send({
+        employeeNumber: `${prefix}-DUP`,
+        fullName: "Copy Cat",
+        departmentId: departmentA.id,
+        countryId: countryIn.id,
+      });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe(ErrorCode.CONFLICT);
+    expect(res.body.error.message).toMatch(/employee number already exists/i);
+    expect(await prisma.employee.count({ where: { employeeNumber: `${prefix}-DUP` } })).toBe(1);
+  });
+
+  it("rejects unauthenticated create and missing Origin", async () => {
+    const { departmentA, countryIn } = await seedDirectory();
+    const payload = {
+      employeeNumber: `${prefix}-AUTH`,
+      fullName: "Auth Ada",
+      departmentId: departmentA.id,
+      countryId: countryIn.id,
+    };
+    const unauth = await request(testApp()).post("/api/employees").set("Origin", APP_ORIGIN).send(payload);
+    expect(unauth.status).toBe(401);
+    expect(unauth.body.error.code).toBe(ErrorCode.UNAUTHENTICATED);
+
+    const { app, cookie } = await session();
+    const csrf = await request(app).post("/api/employees").set("Cookie", cookie).send(payload);
+    expect(csrf.status).toBe(403);
+    expect(csrf.body.error.code).toBe(ErrorCode.CSRF);
+  });
+
+  it("rejects invalid create payloads", async () => {
+    const { departmentA, countryIn } = await seedDirectory();
+    const { app, cookie } = await session();
+    const empty = await request(app)
+      .post("/api/employees")
+      .set("Origin", APP_ORIGIN)
+      .set("Cookie", cookie)
+      .send({
+        employeeNumber: "",
+        fullName: "",
+        departmentId: departmentA.id,
+        countryId: countryIn.id,
+      });
+    const formula = await request(app)
+      .post("/api/employees")
+      .set("Origin", APP_ORIGIN)
+      .set("Cookie", cookie)
+      .send({
+        employeeNumber: "=CMD",
+        fullName: "Formula Fay",
+        departmentId: departmentA.id,
+        countryId: countryIn.id,
+      });
+    const missingDept = await request(app)
+      .post("/api/employees")
+      .set("Origin", APP_ORIGIN)
+      .set("Cookie", cookie)
+      .send({
+        employeeNumber: `${prefix}-MISS`,
+        fullName: "Missing Dept",
+        departmentId: randomUUID(),
+        countryId: countryIn.id,
+      });
+    expect(empty.status).toBe(400);
+    expect(formula.status).toBe(400);
+    expect(missingDept.status).toBe(400);
+    expect(missingDept.body.error.message).toMatch(/department/i);
+  });
+
+  it("edits name, department, and country and writes EMPLOYEE_UPDATE", async () => {
+    const { departmentA, departmentB, countryIn, countryUs } = await seedDirectory();
+    const employee = await createEmployee({
+      number: "EDT",
+      name: "Edit Eve",
+      departmentId: departmentA.id,
+      countryId: countryIn.id,
+    });
+    const { app, cookie } = await session();
+    const res = await request(app)
+      .patch(`/api/employees/${employee.id}`)
+      .set("Origin", APP_ORIGIN)
+      .set("Cookie", cookie)
+      .send({
+        fullName: "Eve Edited",
+        departmentId: departmentB.id,
+        countryId: countryUs.id,
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.data.fullName).toBe("Eve Edited");
+    expect(res.body.data.department.id).toBe(departmentB.id);
+    expect(res.body.data.country.id).toBe(countryUs.id);
+    expect(res.body.data.employeeNumber).toBe(`${prefix}-EDT`);
+
+    const audits = await request(app)
+      .get(`/api/employees/${employee.id}/audit-logs`)
+      .set("Cookie", cookie);
+    expect(audits.body.data.totalCount).toBe(1);
+    expect(audits.body.data.items[0].action).toBe("EMPLOYEE_UPDATE");
+    expect(audits.body.data.items[0].previousValue.fullName).toBe("Edit Eve");
+    expect(audits.body.data.items[0].newValue.fullName).toBe("Eve Edited");
+  });
+
+  it("does not write an audit row when identity fields are unchanged", async () => {
+    const { departmentA, countryIn } = await seedDirectory();
+    const employee = await createEmployee({
+      number: "NOP",
+      name: "Same Sam",
+      departmentId: departmentA.id,
+      countryId: countryIn.id,
+    });
+    const { app, cookie } = await session();
+    const res = await request(app)
+      .patch(`/api/employees/${employee.id}`)
+      .set("Origin", APP_ORIGIN)
+      .set("Cookie", cookie)
+      .send({
+        fullName: "Same Sam",
+        departmentId: departmentA.id,
+        countryId: countryIn.id,
+      });
+    expect(res.status).toBe(200);
+    const audits = await request(app)
+      .get(`/api/employees/${employee.id}/audit-logs`)
+      .set("Cookie", cookie);
+    expect(audits.body.data.totalCount).toBe(0);
+  });
+
+  it("rejects employee-number and isActive changes on PATCH", async () => {
+    const { departmentA, countryIn } = await seedDirectory();
+    const employee = await createEmployee({
+      number: "IMM",
+      name: "Immutable Ian",
+      departmentId: departmentA.id,
+      countryId: countryIn.id,
+      isActive: false,
+    });
+    const { app, cookie } = await session();
+    const numberChange = await request(app)
+      .patch(`/api/employees/${employee.id}`)
+      .set("Origin", APP_ORIGIN)
+      .set("Cookie", cookie)
+      .send({
+        employeeNumber: `${prefix}-NEW`,
+        fullName: "Immutable Ian",
+        departmentId: departmentA.id,
+        countryId: countryIn.id,
+      });
+    const reactivate = await request(app)
+      .patch(`/api/employees/${employee.id}`)
+      .set("Origin", APP_ORIGIN)
+      .set("Cookie", cookie)
+      .send({
+        fullName: "Immutable Ian",
+        departmentId: departmentA.id,
+        countryId: countryIn.id,
+        isActive: true,
+      });
+    expect(numberChange.status).toBe(400);
+    expect(reactivate.status).toBe(400);
+    const stored = await prisma.employee.findUniqueOrThrow({ where: { id: employee.id } });
+    expect(stored.employeeNumber).toBe(`${prefix}-IMM`);
+    expect(stored.isActive).toBe(false);
+  });
+
+  it("requires authentication and Origin on employee edits", async () => {
+    const { departmentA, countryIn } = await seedDirectory();
+    const employee = await createEmployee({
+      number: "SEC",
+      name: "Secure Sue",
+      departmentId: departmentA.id,
+      countryId: countryIn.id,
+    });
+    const payload = {
+      fullName: "Secure Sue",
+      departmentId: departmentA.id,
+      countryId: countryIn.id,
+    };
+    const unauth = await request(testApp())
+      .patch(`/api/employees/${employee.id}`)
+      .set("Origin", APP_ORIGIN)
+      .send(payload);
+    expect(unauth.status).toBe(401);
+
+    const { app, cookie } = await session();
+    const csrf = await request(app).patch(`/api/employees/${employee.id}`).set("Cookie", cookie).send(payload);
+    expect(csrf.status).toBe(403);
+    expect(csrf.body.error.code).toBe(ErrorCode.CSRF);
+  });
+});

@@ -48,6 +48,8 @@ export const AUDIT_ACTIONS = [
   "SALARY_CORRECT",
   "SALARY_IMPORT_CREATE",
   "SALARY_IMPORT_CORRECT",
+  "EMPLOYEE_CREATE",
+  "EMPLOYEE_UPDATE",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

@@ -1,19 +1,23 @@
 import type { Request, Response } from "express";
 import {
   CorrectSalaryRevisionSchema,
+  CreateEmployeeSchema,
   CreateSalaryRevisionSchema,
   EmployeeListQuerySchema,
   ErrorCode,
   PaginationQuerySchema,
+  UpdateEmployeeSchema,
 } from "@payscope/shared";
 import { AppError } from "../errors/app-error.js";
 import { sendSuccess } from "../utils/api-response.js";
 import {
+  createEmployeeRecord,
   deactivateEmployee,
   getEmployee,
   listCountries,
   listDepartments,
   listEmployees,
+  updateEmployeeRecord,
 } from "./employees.service.js";
 import {
   correctSalaryRevision,
@@ -44,6 +48,21 @@ export async function getEmployees(req: Request, res: Response): Promise<void> {
 
 export async function getEmployeeById(req: Request, res: Response): Promise<void> {
   sendSuccess(res, 200, "OK", await getEmployee(req.params.id as string));
+}
+
+export async function postEmployee(req: Request, res: Response): Promise<void> {
+  const body = CreateEmployeeSchema.parse(req.body);
+  sendSuccess(res, 201, "Employee created", await createEmployeeRecord(actorId(req), body));
+}
+
+export async function patchEmployee(req: Request, res: Response): Promise<void> {
+  const body = UpdateEmployeeSchema.parse(req.body);
+  sendSuccess(
+    res,
+    200,
+    "Employee updated",
+    await updateEmployeeRecord(req.params.id as string, actorId(req), body),
+  );
 }
 
 export async function patchDeactivate(req: Request, res: Response): Promise<void> {

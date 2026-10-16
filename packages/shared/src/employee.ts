@@ -4,7 +4,52 @@ import {
   AmountMinorSchema,
   CurrencyCodeSchema,
   EffectiveOnSchema,
+  looksLikeSpreadsheetFormula,
 } from "./money.js";
+
+export const EmployeeNumberSchema = z
+  .string()
+  .trim()
+  .min(1, "Employee number is required")
+  .max(64)
+  .refine((value) => !looksLikeSpreadsheetFormula(value), "Employee number looks like a spreadsheet formula");
+
+export const EmployeeFullNameSchema = z
+  .string()
+  .trim()
+  .min(1, "Full name is required")
+  .max(200)
+  .refine((value) => !looksLikeSpreadsheetFormula(value), "Full name looks like a spreadsheet formula");
+
+export const CreateEmployeeSchema = z.object({
+  employeeNumber: EmployeeNumberSchema,
+  fullName: EmployeeFullNameSchema,
+  departmentId: z.uuid(),
+  countryId: z.uuid(),
+  isActive: z.boolean().optional().default(true),
+});
+
+export type CreateEmployee = z.infer<typeof CreateEmployeeSchema>;
+
+export const UpdateEmployeeSchema = z
+  .object({
+    fullName: EmployeeFullNameSchema,
+    departmentId: z.uuid(),
+    countryId: z.uuid(),
+  })
+  .strict();
+
+export type UpdateEmployee = z.infer<typeof UpdateEmployeeSchema>;
+
+export const EmployeeProfileSnapshotSchema = z.object({
+  employeeNumber: z.string(),
+  fullName: z.string(),
+  departmentId: z.uuid(),
+  countryId: z.uuid(),
+  isActive: z.boolean(),
+});
+
+export type EmployeeProfileSnapshot = z.infer<typeof EmployeeProfileSnapshotSchema>;
 
 export const EmployeeStatusSchema = z.enum(["active", "inactive", "all"]).default("active");
 

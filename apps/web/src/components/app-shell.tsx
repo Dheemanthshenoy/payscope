@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { Suspense, useState, type ReactNode } from "react";
 import { FileSpreadsheet, LayoutDashboard, LogOut, Menu, Users } from "lucide-react";
 import { useAuth } from "@/providers/auth-provider";
 import { Button } from "@/components/ui/button";
@@ -16,12 +16,16 @@ const NAV = [
   { href: "/import-export", label: "Import/Export", icon: FileSpreadsheet },
 ] as const;
 
-function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
+function ActiveNavState({ href }: { href: string }) {
   const pathname = usePathname();
+  const active = pathname === href || pathname.startsWith(`${href}/`);
+  return <span hidden data-active={active ? "true" : "false"} />;
+}
+
+function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav className="flex flex-col gap-1" aria-label="Main">
       {NAV.map((item) => {
-        const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
         const Icon = item.icon;
         return (
           <Link
@@ -30,13 +34,15 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
             onClick={onNavigate}
             className={cn(
               "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-              active
-                ? "bg-sidebar-accent text-white"
-                : "text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-white",
+              "text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-white",
+              "has-[[data-active=true]]:bg-sidebar-accent has-[[data-active=true]]:text-white",
             )}
           >
             <Icon className="h-4 w-4" />
             {item.label}
+            <Suspense>
+              <ActiveNavState href={item.href} />
+            </Suspense>
           </Link>
         );
       })}

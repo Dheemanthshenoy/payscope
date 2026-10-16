@@ -62,3 +62,15 @@ export function salarySnapshot(revision: SalaryRevision) {
     version: revision.version,
   };
 }
+
+export function employeeProfileSnapshot(
+  employee: Employee & { department: Department; country: Country },
+) {
+  return {
+    employeeNumber: employee.employeeNumber,
+    fullName: employee.fullName,
+    departmentId: employee.departmentId,
+    countryId: employee.countryId,
+    isActive: employee.isActive,
+  };
+}

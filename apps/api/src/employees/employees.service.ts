@@ -1,9 +1,15 @@
-import type { Prisma } from "@prisma/client";
-import { ErrorCode, type EmployeeFilterQuery, type EmployeeListQuery } from "@payscope/shared";
+import { Prisma } from "@prisma/client";
+import {
+  ErrorCode,
+  type CreateEmployee,
+  type EmployeeFilterQuery,
+  type EmployeeListQuery,
+  type UpdateEmployee,
+} from "@payscope/shared";
 import { prisma } from "../db/prisma.js";
 import { AppError } from "../errors/app-error.js";
 import { findCurrentSalaries } from "../salaries/current-salary.js";
-import { serializeEmployee } from "./employees.serialize.js";
+import { employeeProfileSnapshot, serializeEmployee } from "./employees.serialize.js";
 
 export function employeeListWhere(query: EmployeeFilterQuery): Prisma.EmployeeWhereInput {
   const where: Prisma.EmployeeWhereInput = {};
@@ -54,6 +60,96 @@ export async function getEmployee(id: string) {
   }
   const salaries = await findCurrentSalaries([employee.id]);
   return serializeEmployee(employee, salaries.get(employee.id));
+}
+
+async function requireDepartment(id: string) {
+  const department = await prisma.department.findUnique({ where: { id }, select: { id: true } });
+  if (!department) {
+    throw new AppError(400, ErrorCode.VALIDATION, "Department not found");
+  }
+}
+
+async function requireCountry(id: string) {
+  const country = await prisma.country.findUnique({ where: { id }, select: { id: true } });
+  if (!country) {
+    throw new AppError(400, ErrorCode.VALIDATION, "Country not found");
+  }
+}
+
+export async function createEmployeeRecord(actorId: string, input: CreateEmployee) {
+  await Promise.all([requireDepartment(input.departmentId), requireCountry(input.countryId)]);
+  const isActive = input.isActive ?? true;
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const created = await tx.employee.create({
+        data: {
+          employeeNumber: input.employeeNumber,
+          fullName: input.fullName,
+          departmentId: input.departmentId,
+          countryId: input.countryId,
+          isActive,
+          deactivatedAt: isActive ? null : new Date(),
+        },
+        include: { department: true, country: true },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId,
+          employeeId: created.id,
+          action: "EMPLOYEE_CREATE",
+          newValue: employeeProfileSnapshot(created),
+        },
+      });
+      return serializeEmployee(created, undefined);
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      throw new AppError(409, ErrorCode.CONFLICT, "An employee with this employee number already exists");
+    }
+    throw err;
+  }
+}
+
+export async function updateEmployeeRecord(id: string, actorId: string, input: UpdateEmployee) {
+  await Promise.all([requireDepartment(input.departmentId), requireCountry(input.countryId)]);
+  const existing = await prisma.employee.findUnique({
+    where: { id },
+    include: { department: true, country: true },
+  });
+  if (!existing) {
+    throw new AppError(404, ErrorCode.NOT_FOUND, "Employee not found");
+  }
+  const changed =
+    existing.fullName !== input.fullName ||
+    existing.departmentId !== input.departmentId ||
+    existing.countryId !== input.countryId;
+  if (!changed) {
+    const salaries = await findCurrentSalaries([existing.id]);
+    return serializeEmployee(existing, salaries.get(existing.id));
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.employee.update({
+      where: { id },
+      data: {
+        fullName: input.fullName,
+        departmentId: input.departmentId,
+        countryId: input.countryId,
+      },
+      include: { department: true, country: true },
+    });
+    await tx.auditLog.create({
+      data: {
+        actorId,
+        employeeId: updated.id,
+        action: "EMPLOYEE_UPDATE",
+        previousValue: employeeProfileSnapshot(existing),
+        newValue: employeeProfileSnapshot(updated),
+      },
+    });
+    const salaries = await findCurrentSalaries([updated.id]);
+    return serializeEmployee(updated, salaries.get(updated.id));
+  });
 }
 
 export async function deactivateEmployee(id: string) {

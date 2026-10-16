@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Bricolage_Grotesque, } from "next/font/google";
 import type { ReactNode } from "react";
 import { AuthProvider } from "@/providers/auth-provider";
+import { QueryProvider } from "@/providers/query-provider";
 import "./globals.css";
 
 const bricolageGrotesque = Bricolage_Grotesque({
@@ -22,7 +23,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${bricolageGrotesque.className} h-full antialiased`}>
       <body className="min-h-full bg-background font-sans text-foreground">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <QueryProvider>{children}</QueryProvider>
+        </AuthProvider>
       </body>
     </html>
   );

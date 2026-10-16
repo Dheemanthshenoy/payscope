@@ -1,9 +1,10 @@
 "use client";
 
-import { startTransition, useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { CompensationAnalytics, CurrencyStats } from "@payscope/shared";
 import { ApiClientError, fetchCompensation } from "@/lib/api";
 import { formatMoney } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -83,26 +84,18 @@ function CurrencyRows({ rows }: { rows: CurrencyStats[] }) {
 }
 
 export default function DashboardPage() {
-  const [data, setData] = useState<CompensationAnalytics | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setData(await fetchCompensation());
-    } catch (err) {
-      setData(null);
-      setError(err instanceof ApiClientError ? err.message : "Unable to load compensation analytics.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    startTransition(() => load());
-  }, [load]);
+  const analyticsQuery = useQuery({
+    queryKey: queryKeys.analytics,
+    queryFn: fetchCompensation,
+  });
+  const data = analyticsQuery.data ?? null;
+  const loading = analyticsQuery.isLoading;
+  const error =
+    analyticsQuery.error instanceof ApiClientError
+      ? analyticsQuery.error.message
+      : analyticsQuery.error
+        ? "Unable to load compensation analytics."
+        : null;
 
   if (loading) {
     return (
@@ -119,7 +112,7 @@ export default function DashboardPage() {
   }
 
   if (error) {
-    return <ErrorState message={error} onRetry={() => void load()} />;
+    return <ErrorState message={error} onRetry={() => void analyticsQuery.refetch()} />;
   }
 
   if (!data || (data.byDepartment.length === 0 && data.byCountry.length === 0)) {

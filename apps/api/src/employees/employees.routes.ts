@@ -3,11 +3,13 @@ import { z } from "zod";
 import { rateLimit } from "express-rate-limit";
 import {
   CorrectSalaryRevisionSchema,
+  CreateEmployeeSchema,
   CreateSalaryRevisionSchema,
   EmployeeFilterQuerySchema,
   EmployeeListQuerySchema,
   ErrorCode,
   PaginationQuerySchema,
+  UpdateEmployeeSchema,
 } from "@payscope/shared";
 import type { AppConfig } from "../config.js";
 import { createCsvController } from "../csv/csv.controller.js";
@@ -25,7 +27,9 @@ import {
   getEmployees,
   getSalaryRevisions,
   patchDeactivate,
+  patchEmployee,
   patchSalaryRevision,
+  postEmployee,
   postSalaryRevision,
 } from "./employees.controller.js";
 
@@ -52,6 +56,7 @@ export function createEmployeeRouter(config: AppConfig): Router {
   router.get("/export", validateQuery(EmployeeFilterQuerySchema), asyncHandler(csv.exportEmployees));
   router.post("/import", importLimiter, asyncHandler(csv.importEmployees));
   router.get("/", validateQuery(EmployeeListQuerySchema), asyncHandler(getEmployees));
+  router.post("/", validateBody(CreateEmployeeSchema), asyncHandler(postEmployee));
   router.get(
     "/:id/salary-revisions",
     validateParams(EmployeeIdParams),
@@ -79,6 +84,12 @@ export function createEmployeeRouter(config: AppConfig): Router {
     "/:id/deactivate",
     validateParams(EmployeeIdParams),
     asyncHandler(patchDeactivate),
+  );
+  router.patch(
+    "/:id",
+    validateParams(EmployeeIdParams),
+    validateBody(UpdateEmployeeSchema),
+    asyncHandler(patchEmployee),
   );
   router.get("/:id", validateParams(EmployeeIdParams), asyncHandler(getEmployeeById));
 

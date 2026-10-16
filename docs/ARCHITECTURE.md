@@ -114,14 +114,14 @@ Sessions (if stored server-side): table managed by the session library (e.g. `co
 | `actor_id` | uuid | `NOT NULL` FK → HRUser |
 | `employee_id` | uuid | `NOT NULL` FK → Employee |
 | `salary_revision_id` | uuid | FK → SalaryRevision (nullable if we ever log a failed path; normal writes set it) |
-| `action` | text | `NOT NULL` — `SALARY_CREATE` \| `SALARY_CORRECT` \| `SALARY_IMPORT_CREATE` \| `SALARY_IMPORT_CORRECT` |
+| `action` | text | `NOT NULL` — `SALARY_CREATE` \| `SALARY_CORRECT` \| `SALARY_IMPORT_CREATE` \| `SALARY_IMPORT_CORRECT` \| `EMPLOYEE_CREATE` \| `EMPLOYEE_UPDATE` |
 | `previous_value` | jsonb | null on create; snapshot on correct |
-| `new_value` | jsonb | `NOT NULL` — `{ amount_minor, currency_code, effective_on, reason, version }` with `amount_minor` as a JSON string |
+| `new_value` | jsonb | `NOT NULL` — salary: `{ amountMinor, currencyCode, effectiveOn, reason, version }` with `amountMinor` as a JSON string; identity: `{ employeeNumber, fullName, departmentId, countryId, isActive }` |
 | `created_at` | timestamptz | `NOT NULL DEFAULT now()` |
 
 **Append-only at the database, not only in app code:** no `updated_at`; the app role is granted `SELECT, INSERT` only (no `UPDATE`/`DELETE`); a `BEFORE UPDATE OR DELETE` trigger raises an exception. Indexes: `(employee_id, created_at DESC)`; `(created_at DESC)` for a global trail.
 
-Requirements: audit **salary mutations only**. Employee field changes via CSV are not in this table unless they accompany a salary write (see open decisions).
+Requirements: audit **salary mutations** and **HR UI identity create/update**. Employee field changes via CSV still do not write `EMPLOYEE_*` rows unless they accompany a salary write (see open decisions). The init migration CHECK allowed salary actions only; Milestone 8B adds `EMPLOYEE_CREATE` and `EMPLOYEE_UPDATE` to that CHECK before any identity audit insert.
 
 ### Relationship summary
 
@@ -231,7 +231,9 @@ JSON REST, same-origin `/api`. All routes except login require a valid session a
 | GET | `/api/departments` | filter dropdown |
 | GET | `/api/countries` | filter dropdown |
 | GET | `/api/employees` | directory: `q`, `departmentId`, `countryId`, `status=active\|inactive\|all` (default **active**), pagination. Include derived current salary or null. DB `LIMIT/OFFSET` or keyset; offset is fine at 10k. |
+| POST | `/api/employees` | create identity (employee number, name, department, country, optional `isActive`). No salary required. Duplicate employee number → 409. Writes `EMPLOYEE_CREATE` audit. |
 | GET | `/api/employees/:id` | detail + derived current salary |
+| PATCH | `/api/employees/:id` | edit name, department, country. Employee number is immutable. Does not accept `isActive` (no reactivate). Meaningful changes write `EMPLOYEE_UPDATE` audit. |
 | PATCH | `/api/employees/:id/deactivate` | `is_active=false` (no hard delete). Architecture originally said POST; implemented as PATCH. |
 | GET | `/api/employees/:id/salary-revisions` | history, all dates, newest first |
 | POST | `/api/employees/:id/salary-revisions` | create a new effective date (`version` omitted). Duplicate date → 409. |
@@ -239,10 +241,10 @@ JSON REST, same-origin `/api`. All routes except login require a valid session a
 | GET | `/api/analytics/compensation` | current snapshot: by department and by country, nested currency stats + both headcounts (money fields as strings) |
 | GET | `/api/employees/export` | CSV of current directory + current salary (`text/csv`) |
 | POST | `/api/employees/import` | multipart CSV; validate outside txn; version-snapshot updates; all-or-nothing batched commit; stale version or unique race → 409, full rollback |
-| GET | `/api/employees/:id/audit-logs` | per-employee salary audit, paginated |
+| GET | `/api/employees/:id/audit-logs` | per-employee identity and salary audit, paginated |
 | GET | `/api/audit-logs` | global salary audit, paginated |
 
-**Employee create/edit UI — decision: omit from MVP.** The product goal is a system of record, but identity writes are already covered by the **10,000-employee seed** and **CSV create-and-update**. The HR Manager’s daily path is search, salary revision, analytics, and audit. A create/edit form would add pages, `POST/PATCH /employees`, extra validation/E2E, and an audit gap for non-salary fields — not justified in a time-boxed assessment. **In UI:** deactivate only. **Not in MVP:** reactivate, as-of analytics.
+**Employee create/edit UI — decision: included.** HR can create an employee without a salary and later add revisions. Edit covers name, department, and country only. Employee number is immutable. Reactivate remains out of MVP. Identity writes from this UI are audited (`EMPLOYEE_CREATE` / `EMPLOYEE_UPDATE`) after extending `audit_logs_action_allowed`. CSV identity edits remain unaudited unless they accompany a salary write.
 
 **CSV canonical header** (see `docs/samples/employees.sample.csv`):
 
@@ -304,7 +306,7 @@ Incubyte asks for **unit tests**; integration and a thin E2E layer back the sala
 | Origin-checked CSRF | Fits same-origin rewrite deploy; no extra token store | CSRF tokens / double-submit — more moving parts than needed if Origin is enforced |
 | OCC `version` | Two HR tabs will not silently clobber a correction | Pessimistic locks / queues — extra infra for a rare conflict |
 | All-or-nothing CSV | Matches requirements; avoids half-imported 10k files | Per-row commit — rejected by requirements |
-| No employee create form | Seed + CSV cover identity; keeps the time-box on salary/analytics | Extra employee CRUD UI — duplicates CSV, more tests |
+| Employee create/edit UI | HR must add and correct identity without a spreadsheet; employee number stays immutable | Reactivate / hard-delete — still out of MVP |
 
 ## Open decisions and risks
 
@@ -314,7 +316,7 @@ Incubyte asks for **unit tests**; integration and a thin E2E layer back the sala
 - **CSV duplicates:** intra-file duplicate `employee_number` or `employee_number` + `effective_on` reject the **entire** file with row-level errors. The same pair already in the DB is an update, not a duplicate error.
 - **Session lifetime:** 8-hour idle expiry; regenerate id on login.
 - **Median:** exact `avg(amount_minor::numeric)` of the middle one or two rows per group (`row_number` + `count`); round to integer minor units only when presenting the API response.
-- **Employee create/edit form:** omitted from MVP (seed + CSV only); see section 5.
+- **Employee create/edit form:** included (POST/PATCH employees; no reactivate); see section 5.
 - **Money JSON:** `amountMinor` as string.
 - **CSV amount:** major units; columns listed in section 5.
 
@@ -324,7 +326,7 @@ Incubyte asks for **unit tests**; integration and a thin E2E layer back the sala
 2. **Reactivate** — deactivate is specified; restore-to-active is not (API or CSV).
 3. **Email / title / hire date** — omitted from the model on purpose.
 4. **Currency vs country** — a US employee with INR pay is allowed; analytics will show that currency slice.
-5. **Audit of non-salary CSV fields** — salary mutations only; name/department changes via import may be unaudited.
+5. **Audit of non-salary CSV fields** — UI identity create/update is audited. CSV name/department/country edits still may be unaudited unless they accompany a salary write.
 6. **Audit UI** — both per-employee and global endpoints; requirements only say HR can view the trail.
 7. **Deployment host** — brief requires deployment; provider is open. Origin allowlist and `Secure` cookies assume HTTPS + same-site proxy.
 8. **Employee number format** — opaque unique string.

@@ -1,0 +1,6 @@
+employee_number,full_name,department,country,is_active,effective_on,amount,currency_code,reason
+E-10001,Ada Lovelace,Engineering,India,true,2024-01-15,1200000.00,INR,annual review
+E-10002,Grace Hopper,Engineering,US,true,2024-03-01,145000.50,USD,offer
+E-10003,Alan Turing,Product,UK,true,2025-01-01,98000.00,GBP,
+E-10004,Unpaid Uma,Design,Germany,true,,,,
+E-10005,Inactive Ivan,Support,UAE,false,2023-06-01,90000.00,AED,legacy

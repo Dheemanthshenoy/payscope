@@ -3,14 +3,21 @@ import {
   ApiSuccessSchema,
   AuthUserSchema,
   CompensationAnalyticsSchema,
+  CsvImportSuccessSchema,
   EmployeeSummarySchema,
   SalaryRevisionSchema,
   type AuthUser,
   type CompensationAnalytics,
+  type CorrectSalaryRevision,
+  type CreateEmployee,
+  type CreateSalaryRevision,
+  type CsvImportSuccess,
   type EmployeeSummary,
   type SalaryRevisionDto,
+  type UpdateEmployee,
 } from "@payscope/shared";
 import { z } from "zod";
+import { parseContentDispositionFilename, safeDownloadFilename } from "@/lib/csv-download";
 
 export class ApiClientError extends Error {
   readonly status: number;
@@ -82,7 +89,7 @@ function queryString(params: Record<string, string | number | undefined>): strin
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
-  if (init.body != null && !headers.has("Content-Type")) {
+  if (init.body != null && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -167,6 +174,26 @@ export async function fetchEmployee(id: string): Promise<EmployeeSummary> {
   return EmployeeSummarySchema.parse(await apiRequest<unknown>(`/api/employees/${id}`));
 }
 
+export async function createEmployee(
+  body: Omit<CreateEmployee, "isActive"> & { isActive?: boolean },
+): Promise<EmployeeSummary> {
+  return EmployeeSummarySchema.parse(
+    await apiRequest<unknown>("/api/employees", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function updateEmployee(id: string, body: UpdateEmployee): Promise<EmployeeSummary> {
+  return EmployeeSummarySchema.parse(
+    await apiRequest<unknown>(`/api/employees/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 export async function fetchDepartments(): Promise<DepartmentLookup[]> {
   return z.array(LookupDepartmentSchema).parse(await apiRequest<unknown>("/api/departments"));
 }
@@ -188,4 +215,97 @@ export async function fetchEmployeeAuditLogs(
   return AuditListSchema.parse(
     await apiRequest<unknown>(`/api/employees/${employeeId}/audit-logs${queryString({ page })}`),
   );
+}
+
+export async function createSalaryRevision(
+  employeeId: string,
+  body: CreateSalaryRevision,
+): Promise<SalaryRevisionDto> {
+  return SalaryRevisionSchema.parse(
+    await apiRequest<unknown>(`/api/employees/${employeeId}/salary-revisions`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function correctSalaryRevision(
+  employeeId: string,
+  revisionId: string,
+  body: CorrectSalaryRevision,
+): Promise<SalaryRevisionDto> {
+  return SalaryRevisionSchema.parse(
+    await apiRequest<unknown>(`/api/employees/${employeeId}/salary-revisions/${revisionId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function deactivateEmployee(employeeId: string): Promise<EmployeeSummary> {
+  return EmployeeSummarySchema.parse(
+    await apiRequest<unknown>(`/api/employees/${employeeId}/deactivate`, { method: "PATCH" }),
+  );
+}
+
+export async function importEmployeesCsv(file: File): Promise<CsvImportSuccess> {
+  const form = new FormData();
+  form.set("file", file);
+  return CsvImportSuccessSchema.parse(
+    await apiRequest<unknown>("/api/employees/import", {
+      method: "POST",
+      body: form,
+    }),
+  );
+}
+
+export type EmployeeExportFilters = {
+  q?: string;
+  departmentId?: string;
+  countryId?: string;
+  status?: "active" | "inactive" | "all";
+};
+
+export async function exportEmployeesCsv(
+  filters: EmployeeExportFilters = {},
+): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch(`/api/employees/export${queryString(filters)}`, {
+    credentials: "include",
+  });
+
+  if (response.status === 401) {
+    unauthorizedHandler?.();
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!response.ok) {
+    if (contentType.includes("application/json")) {
+      const text = await response.text();
+      let payload: unknown = null;
+      try {
+        payload = JSON.parse(text) as unknown;
+      } catch {
+        throw new ApiClientError(response.status, "INTERNAL", "Unable to export employees.");
+      }
+      const parsed = ApiErrorSchema.safeParse(payload);
+      if (parsed.success) {
+        throw new ApiClientError(
+          response.status,
+          parsed.data.error.code,
+          parsed.data.error.message,
+          parsed.data.error.details,
+        );
+      }
+    }
+    throw new ApiClientError(response.status, "INTERNAL", "Unable to export employees.");
+  }
+
+  if (contentType.includes("application/json")) {
+    throw new ApiClientError(response.status, "INTERNAL", "Export returned JSON instead of CSV.");
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: safeDownloadFilename(parseContentDispositionFilename(response.headers.get("content-disposition"))),
+  };
 }
